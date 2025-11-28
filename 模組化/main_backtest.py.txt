@@ -1,0 +1,56 @@
+import os
+import pandas as pd
+
+from indicators.ma import add_ma
+from indicators.kd import compute_kd
+from strategies.entry_kd import kd_under_threshold
+from backtest.engine import run_backtest
+from backtest.report import save_trades_to_excel
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+HIST_DIR = os.path.join(BASE_DIR, "historical data")
+
+def load_csv(filename: str) -> pd.DataFrame:
+    path = os.path.join(HIST_DIR, filename)
+    df = pd.read_csv(path, encoding="utf-8-sig")
+    df["Date"] = pd.to_datetime(df["Date"], utc=True, errors="coerce")
+    df["Date"] = df["Date"].dt.tz_localize(None)
+    df.sort_values("Date", inplace=True)
+    return df
+
+def main():
+    # 先寫死檔名，你可以換成實際的 0050 檔案名稱
+    filename = "0050 max.csv"
+
+    df = load_csv(filename)
+    df = add_ma(df)
+    df = compute_kd(df)
+
+    trade_df, summary = run_backtest(
+        df,
+        entry_rule=lambda d: kd_under_threshold(d, threshold=20.0),
+        years=5,
+        buy_mode="shares",
+        shares_per_trade=1,
+    )
+
+    if not summary["has_trade"]:
+        print("近五年內沒有任何買進訊號。")
+        return
+
+    out_path = save_trades_to_excel(trade_df, summary, BASE_DIR, filename="result.xlsx")
+
+    print("========== 回測摘要（最近五年） ==========")
+    print(f"總買入次數：{len(trade_df)}")
+    print(f"累積買進股數：{summary['total_shares']}")
+    print(f"總成本：{summary['total_cost']:.2f}")
+    print(f"最後一天收盤：{summary['final_close']}")
+    print(f"最終市值：{summary['final_value']:.2f}")
+    print(f"總報酬：{summary['total_profit']:.2f}")
+    sign = "+" if summary['profit_pct'] >= 0 else "-"
+    print(f"總報酬百分比：{sign}{abs(summary['profit_pct']):.2f}%")
+    print("=========================================")
+    print(f"交易明細與摘要已輸出到：{out_path}")
+
+if __name__ == "__main__":
+    main()

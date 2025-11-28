@@ -1,0 +1,18 @@
+import os
+import pandas as pd
+from typing import Dict, Any
+
+def save_trades_to_excel(trade_df: pd.DataFrame, summary: Dict[str, Any],
+                         base_dir: str, filename: str = "result.xlsx") -> str:
+    """
+    將交易明細與摘要存成 Excel：
+    - Sheet1: trades
+    - Sheet2: summary
+    回傳輸出檔路徑。
+    """
+    out_path = os.path.join(base_dir, filename)
+    with pd.ExcelWriter(out_path, engine="openpyxl") as writer:
+        trade_df.to_excel(writer, index=False, sheet_name="trades")
+        summary_df = pd.DataFrame([summary])
+        summary_df.to_excel(writer, index=False, sheet_name="summary")
+    return out_path

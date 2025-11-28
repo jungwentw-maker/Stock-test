@@ -1,0 +1,93 @@
+import pandas as pd
+from typing import Callable, Literal, Tuple, Dict, Any
+
+BuyMode = Literal["shares", "amount"]
+
+def run_backtest(
+    df: pd.DataFrame,
+    entry_rule: Callable[[pd.DataFrame], pd.Series],
+    years: int = 5,
+    buy_mode: BuyMode = "shares",
+    shares_per_trade: int = 1,
+    amount_per_trade: float = 20000.0,
+) -> Tuple[pd.DataFrame, Dict[str, Any]]:
+    """
+    簡易回測引擎：
+    - 先切出最近 N 年資料
+    - 使用 entry_rule 產生 buy_signal
+    - 只有買入，不賣出，期末用最後一天收盤價結算
+    """
+
+    df = df.copy().sort_values("Date")
+    last_date = df["Date"].max()
+    if years is not None:
+        df = df[df["Date"] >= last_date - pd.Timedelta(days=365 * years + 1)].copy()
+
+    if "DateStr" not in df.columns:
+        df["DateStr"] = df["Date"].dt.strftime("%Y-%m-%d")
+
+    # 產生買進訊號
+    buy_signal = entry_rule(df)
+    df["buy_signal"] = buy_signal
+
+    trades = []
+    total_shares = 0
+    final_close = df["Close"].iloc[-1]
+
+    for _, row in df[df["buy_signal"]].iterrows():
+        date = row["Date"]
+        close = row["Close"]
+
+        if buy_mode == "shares":
+            shares = int(shares_per_trade)
+        else:
+            if close <= 0:
+                continue
+            shares = int(amount_per_trade // close)
+            if shares <= 0:
+                continue
+
+        cost = shares * close
+        total_shares += shares
+
+        trades.append({
+            "日期": date.strftime("%Y-%m-%d"),
+            "買入價": close,
+            "股數": shares,
+            "成本": cost,
+        })
+
+    trade_df = pd.DataFrame(trades)
+
+    if len(trade_df) == 0:
+        summary = {
+            "has_trade": False,
+            "total_shares": 0,
+            "total_cost": 0.0,
+            "final_close": final_close,
+            "final_value": 0.0,
+            "total_profit": 0.0,
+            "profit_pct": 0.0,
+        }
+        return trade_df, summary
+
+    trade_df["期末價"] = final_close
+    trade_df["最終市值"] = trade_df["股數"] * final_close
+    trade_df["獲利"] = trade_df["最終市值"] - trade_df["成本"]
+    trade_df["報酬率%"] = trade_df["獲利"] / trade_df["成本"] * 100
+
+    total_cost = trade_df["成本"].sum()
+    final_value = total_shares * final_close
+    total_profit = final_value - total_cost
+    profit_pct = (total_profit / total_cost * 100) if total_cost != 0 else 0.0
+
+    summary = {
+        "has_trade": True,
+        "total_shares": total_shares,
+        "total_cost": total_cost,
+        "final_close": final_close,
+        "final_value": final_value,
+        "total_profit": total_profit,
+        "profit_pct": profit_pct,
+    }
+    return trade_df, summary

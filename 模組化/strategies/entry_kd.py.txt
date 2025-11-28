@@ -1,0 +1,8 @@
+import pandas as pd
+
+def kd_under_threshold(df: pd.DataFrame, k_col: str = "K",
+                       threshold: float = 20.0) -> pd.Series:
+    """
+    回傳布林序列，True 表示：K < threshold
+    """
+    return df[k_col] < threshold
