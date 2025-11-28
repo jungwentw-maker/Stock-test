@@ -272,6 +272,12 @@ def plot_stock(
         total_profit = final_value - total_cost
         profit_pct = (total_profit / total_cost) * 100 if total_cost > 0 else 0
 
+        annualized_pct = None
+        if window_start is not None and window_end is not None and total_cost > 0:
+            total_days = (window_end - window_start).days
+            if total_days > 0:
+                annualized_pct = (final_value / total_cost) ** (365.25 / total_days) - 1
+
         name = stock_name_map.get(stock_id) or stock_name_map.get(stock_id.lstrip("0")) or ""
 
         # 文字化回測條件，方便在輸出結果中記錄
@@ -310,6 +316,9 @@ def plot_stock(
         print(f"總報酬：{total_profit:,.2f}")
         sign = "+" if profit_pct >= 0 else "-"
         print(f"總報酬百分比：{sign}{abs(profit_pct):.2f}%")
+        if annualized_pct is not None:
+            sign = "+" if annualized_pct >= 0 else "-"
+            print(f"年化報酬率：{sign}{abs(annualized_pct * 100):.2f}%")
         print("=========================================")
     else:
         print("⚠ 篩選期間內沒有任何符合條件的買進訊號（不會產生 result.xlsx）。")
