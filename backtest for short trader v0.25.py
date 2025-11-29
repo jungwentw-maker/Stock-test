@@ -303,21 +303,19 @@ def plot_stock(
         date = row["Date"]
         close = row["Close"]
 
-        if position_shares > 0:
-            if highest_since_entry is None:
-                highest_since_entry = close
-            else:
-                highest_since_entry = max(highest_since_entry, close)
+        prev_highest = highest_since_entry
+        if position_shares > 0 and prev_highest is None:
+            prev_highest = close
 
         trailing_stop_trigger = False
         trailing_profit_trigger = False
-        if position_shares > 0 and highest_since_entry is not None:
+        if position_shares > 0 and prev_highest is not None:
             if trailing_stop_enabled:
-                stop_threshold = highest_since_entry * (1 - trailing_stop_pct / 100)
+                stop_threshold = prev_highest * (1 - trailing_stop_pct / 100)
                 trailing_stop_trigger = close <= stop_threshold
 
             if trailing_profit_enabled:
-                profit_threshold = highest_since_entry * (1 + trailing_profit_pct / 100)
+                profit_threshold = prev_highest * (1 + trailing_profit_pct / 100)
                 trailing_profit_trigger = close >= profit_threshold
 
         # 1) 停利/停損賣出
@@ -358,6 +356,11 @@ def plot_stock(
                     "持股數(收盤後)": position_shares,
                     "單筆實現損益": realized_pnl,
                 })
+
+        if position_shares == 0:
+            highest_since_entry = None
+        else:
+            highest_since_entry = max(prev_highest, close)
 
         # 2) 買進訊號
         if row["buy_signal"]:
