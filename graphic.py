@@ -456,6 +456,38 @@ def plot_backtest_figure(df: pd.DataFrame,
             yaxis="y",
         ))
 
+    # 移動停損賣出標記（紅色倒三角形）
+    if "trailing_stop_sell" in df.columns and df["trailing_stop_sell"].any():
+        ts_mask = df["trailing_stop_sell"].astype(bool)
+        ts_prices = df.loc[ts_mask, "Close"]
+        traces.append(go.Scatter(
+            x=df.loc[ts_mask, "DateStr"],
+            y=ts_prices * 1.05,
+            mode="markers",
+            marker=dict(symbol="triangle-down", size=14, color="red"),
+            name="移動停損賣出",
+            customdata=ts_prices,
+            hovertemplate="移動停損<br>收盤：%{customdata}<extra></extra>",
+            xaxis="x",
+            yaxis="y",
+        ))
+
+    # 移動停利賣出標記（綠色倒三角形）
+    if "trailing_profit_sell" in df.columns and df["trailing_profit_sell"].any():
+        tp_mask = df["trailing_profit_sell"].astype(bool)
+        tp_prices = df.loc[tp_mask, "Close"]
+        traces.append(go.Scatter(
+            x=df.loc[tp_mask, "DateStr"],
+            y=tp_prices * 1.05,
+            mode="markers",
+            marker=dict(symbol="triangle-down", size=14, color="green"),
+            name="移動停利賣出",
+            customdata=tp_prices,
+            hovertemplate="移動停利<br>收盤：%{customdata}<extra></extra>",
+            xaxis="x",
+            yaxis="y",
+        ))
+
     layout = go.Layout(
         title=dict(text=title_text),
         template="plotly_white",
