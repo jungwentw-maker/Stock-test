@@ -427,12 +427,31 @@ def plot_backtest_figure(df: pd.DataFrame,
     # 買點標記（黑色三角形）
     if "buy_signal" in df.columns and df["buy_signal"].any():
         buy_mask = df["buy_signal"].astype(bool)
+        buy_prices = df.loc[buy_mask, "Close"]
         traces.append(go.Scatter(
             x=df.loc[buy_mask, "DateStr"],
-            y=df.loc[buy_mask, "Close"],
+            y=buy_prices * 0.95,
             mode="markers",
             marker=dict(symbol="triangle-up", size=14, color="black"),
             name="買點",
+            customdata=buy_prices,
+            hovertemplate="買點<br>收盤：%{customdata}<extra></extra>",
+            xaxis="x",
+            yaxis="y",
+        ))
+
+    # 賣點標記（黑色倒三角形）
+    if "sell_signal" in df.columns and df["sell_signal"].any():
+        sell_mask = df["sell_signal"].astype(bool)
+        sell_prices = df.loc[sell_mask, "Close"]
+        traces.append(go.Scatter(
+            x=df.loc[sell_mask, "DateStr"],
+            y=sell_prices * 1.05,
+            mode="markers",
+            marker=dict(symbol="triangle-down", size=14, color="black"),
+            name="賣點",
+            customdata=sell_prices,
+            hovertemplate="賣點<br>收盤：%{customdata}<extra></extra>",
             xaxis="x",
             yaxis="y",
         ))
