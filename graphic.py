@@ -112,12 +112,22 @@ def compute_kd(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def compute_raff_channels(df: pd.DataFrame, min_length: int = 15, min_r2: float = 0.6):
+def compute_raff_channels(
+    df: pd.DataFrame,
+    min_length: int = 20,
+    max_length: int = 80,
+    min_r2: float = 0.6,
+    max_half_width_ratio: float = 0.15,
+    min_trend_ratio: float = 0.03,
+):
     """
     計算不重疊的 Raff Regression Channels：
-    - 逐一嘗試每個起點，但通道彼此不可重疊
-    - 視窗長度需 >= min_length，且線性回歸的 R^2 需達 min_r2 才算有效通道
-    - 以覆蓋視窗資料的最小通道寬度作為評分，選出該起點的最佳通道
+    - 逐一嘗試每個起點，但通道彼此不可重疊（先收集所有候選，再以 R^2 高→低的順序挑選）
+    - 視窗長度限制在 min_length～max_length 之間，線性回歸的 R^2 需達 min_r2
+    - 以 R^2 為主要評分（越高越好），同分再取通道半寬較小者，長度較長者優先
+    - 半寬不得超過通道中點的 max_half_width_ratio（預設 ±15%）
+    - 通道上、下緣各至少一個資料點觸碰才成立，避免通道偏離 K 線
+    - 窗口首尾的價差占平均價的比例需大於等於 min_trend_ratio 且至少與半寬同級，避免側向盤整也被畫通道
     - 回傳 list[dict]：每個通道包含 {"x", "upper", "lower", "center", "window", "start", "r2"}
     若資料不足或無法計算則回傳空 list。
     """
@@ -125,12 +135,10 @@ def compute_raff_channels(df: pd.DataFrame, min_length: int = 15, min_r2: float 
     if len(df) < min_length or "Close" not in df.columns or "DateStr" not in df.columns:
         return []
 
-    channels = []
-    start = 0
+    candidates = []
 
-    while start <= len(df) - min_length:
-        best_for_start = None
-        max_window = len(df) - start
+    for start in range(0, len(df) - min_length + 1):
+        max_window = min(max_length, len(df) - start)
 
         for window in range(min_length, max_window + 1):
             closes = df["Close"].iloc[start:start + window]
@@ -159,26 +167,51 @@ def compute_raff_channels(df: pd.DataFrame, min_length: int = 15, min_r2: float 
             mean_price = np.mean(closes)
             normalized_width = max_abs / mean_price if mean_price else np.inf
 
-            if best_for_start is None or normalized_width < best_for_start["score"]:
-                best_for_start = {
-                    "x": dates.tolist(),
-                    "center": fitted.tolist(),
-                    "upper": (fitted + max_abs).tolist(),
-                    "lower": (fitted - max_abs).tolist(),
-                    "window": window,
-                    "start": start,
-                    "r2": r2,
-                    "score": normalized_width,
-                }
+            if normalized_width > max_half_width_ratio:
+                continue
 
-        if best_for_start:
-            best_for_start.pop("score", None)
-            channels.append(best_for_start)
-            start = best_for_start["start"] + best_for_start["window"]
-        else:
-            start += 1
+            trend_ratio = abs(closes.iloc[-1] - closes.iloc[0]) / mean_price if mean_price else 0
+            if trend_ratio < min_trend_ratio or trend_ratio < normalized_width:
+                continue
 
-    return channels
+            touch_tolerance = max(1e-6, max_abs * 1e-3)
+            upper_touches = np.sum(
+                np.isclose(residuals, max_abs, rtol=1e-3, atol=touch_tolerance)
+            )
+            lower_touches = np.sum(
+                np.isclose(residuals, -max_abs, rtol=1e-3, atol=touch_tolerance)
+            )
+
+            if upper_touches < 1 or lower_touches < 1:
+                continue
+
+            candidates.append({
+                "x": dates.tolist(),
+                "center": fitted.tolist(),
+                "upper": (fitted + max_abs).tolist(),
+                "lower": (fitted - max_abs).tolist(),
+                "window": window,
+                "start": start,
+                "end": start + window - 1,
+                "r2": r2,
+                "score_width": normalized_width,
+            })
+
+    # 依 R^2 高→低、半寬窄→寬、視窗長→短 排序，從高分挑選不重疊區段
+    candidates.sort(key=lambda c: (-c["r2"], c["score_width"], -c["window"]))
+    selected = []
+
+    for cand in candidates:
+        if any(not (cand["end"] < sel["start"] or cand["start"] > sel["end"]) for sel in selected):
+            continue
+        selected.append(cand)
+
+    selected.sort(key=lambda c: c["start"])
+    for cand in selected:
+        cand.pop("score_width", None)
+        cand.pop("end", None)
+
+    return selected
 
 
 def plot_stock(file_info, stock_name_map):
@@ -221,8 +254,8 @@ def plot_stock(file_info, stock_name_map):
     # KD
     df = compute_kd(df)
 
-    # Raff Regression Channels（最少 15 個交易日，列出圖形範圍內所有通道）
-    raff_channels = compute_raff_channels(df, min_length=15)
+    # Raff Regression Channels（20～80 個交易日，列出圖形範圍內所有通道）
+    raff_channels = compute_raff_channels(df, min_length=20, max_length=80)
 
     # 成交量顏色（漲紅跌綠）
     volume_colors = [
@@ -497,7 +530,7 @@ def plot_backtest_figure(df: pd.DataFrame,
             xaxis="x", yaxis="y",
         ))
 
-    raff_channels = compute_raff_channels(df, min_length=15)
+    raff_channels = compute_raff_channels(df, min_length=20, max_length=80)
 
     if raff_channels:
         legend_added = False
