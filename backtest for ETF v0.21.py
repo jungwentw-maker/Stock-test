@@ -115,6 +115,7 @@ def plot_stock(
     oversold_lookback,
     start_mode,
     start_date,
+    show_raff_channels,
 ):
     """
     讀取單一 CSV、依參數執行回測與繪圖。
@@ -325,7 +326,13 @@ def plot_stock(
 
     # 使用 graphic 模組繪圖（K線 + 成交量 + KD + 買點）
     name = stock_name_map.get(stock_id) or stock_name_map.get(stock_id.lstrip("0")) or ""
-    graphic.plot_backtest_figure(df, stock_id, name, period)
+    graphic.plot_backtest_figure(
+        df,
+        stock_id,
+        name,
+        period,
+        show_raff_channels=show_raff_channels,
+    )
 
 
 def main():
@@ -452,18 +459,26 @@ def main():
     entry_N.insert(0, "1")
     entry_N.grid(row=1, column=1, sticky="w", pady=(2, 0))
 
+    # === 圖表顯示 ===
+    show_raff_var = tk.BooleanVar(value=True)
+    tk.Checkbutton(
+        controls,
+        text="繪製 Raff 趨勢線",
+        variable=show_raff_var,
+    ).grid(row=3, column=1, sticky="w", pady=(5, 0))
+
     # === 買進模式 ===
     tk.Label(controls, text="買進模式：")\
-        .grid(row=3, column=0, sticky="w", padx=(0, 5), pady=(5, 0))
+        .grid(row=4, column=0, sticky="w", padx=(0, 5), pady=(5, 0))
 
     mode_var = tk.StringVar(value="amount")
 
     frame_mode = tk.Frame(controls)
-    frame_mode.grid(row=3, column=1, sticky="w", pady=(5, 0))
+    frame_mode.grid(row=4, column=1, sticky="w", pady=(5, 0))
 
     # === 買進數值輸入 ===
     frame_input = tk.Frame(controls)
-    frame_input.grid(row=4, column=1, sticky="we", pady=(2, 0))
+    frame_input.grid(row=5, column=1, sticky="we", pady=(2, 0))
 
     label_value = tk.Label(frame_input, text="每次買入金額：")
     label_value.pack(anchor="w")
@@ -597,6 +612,8 @@ def main():
             messagebox.showerror("觸發條件錯誤", "請至少勾選一種觸發條件")
             return
 
+        show_raff_channels = show_raff_var.get()
+
         plot_stock(
             info,
             stock_map,
@@ -610,6 +627,7 @@ def main():
             oversold_lookback,
             start_mode,
             start_date,
+            show_raff_channels,
         )
 
     tk.Button(root, text="繪圖＆回測", font=("Arial", 12),
