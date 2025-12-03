@@ -425,7 +425,19 @@ def plot_stock(
 
         # 輸出 Excel
         out_path = os.path.join(BASE_DIR, "result.xlsx")
-        trade_df.to_excel(out_path, index=False)
+        try:
+            trade_df.to_excel(out_path, index=False)
+        except PermissionError:
+            messagebox.showerror(
+                "檔案被占用",
+                f"無法覆寫 {out_path}\n請關閉檔案後再試一次",
+            )
+        except Exception:
+            log_path = write_error_log("result.xlsx 匯出失敗（backtest v0.25）")
+            messagebox.showerror(
+                "匯出失敗",
+                f"匯出交易紀錄到 Excel 時發生錯誤，已寫入\n{log_path}",
+            )
 
         name = stock_name_map.get(stock_id) or stock_name_map.get(stock_id.lstrip("0")) or ""
 
