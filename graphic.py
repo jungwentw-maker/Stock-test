@@ -112,12 +112,13 @@ def compute_kd(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def compute_raff_channels(df: pd.DataFrame, min_length: int = 15):
+def compute_raff_channels(df: pd.DataFrame, min_length: int = 15, min_r2: float = 0.6):
     """
-    計算所有可能的 Raff Regression Channels：
-    - 對圖表範圍內每一個起點與視窗長度（>= min_length）進行線性回歸
-    - 以覆蓋視窗資料的最小通道寬度作為該視窗的通道
-    - 回傳 list[dict]：每個通道包含 {"x", "upper", "lower", "center", "window", "start"}
+    計算不重疊的 Raff Regression Channels：
+    - 逐一嘗試每個起點，但通道彼此不可重疊
+    - 視窗長度需 >= min_length，且線性回歸的 R^2 需達 min_r2 才算有效通道
+    - 以覆蓋視窗資料的最小通道寬度作為評分，選出該起點的最佳通道
+    - 回傳 list[dict]：每個通道包含 {"x", "upper", "lower", "center", "window", "start", "r2"}
     若資料不足或無法計算則回傳空 list。
     """
 
@@ -125,9 +126,10 @@ def compute_raff_channels(df: pd.DataFrame, min_length: int = 15):
         return []
 
     channels = []
+    start = 0
 
-    for start in range(0, len(df) - min_length + 1):
-        best_for_window = None
+    while start <= len(df) - min_length:
+        best_for_start = None
         max_window = len(df) - start
 
         for window in range(min_length, max_window + 1):
@@ -140,26 +142,41 @@ def compute_raff_channels(df: pd.DataFrame, min_length: int = 15):
             x = np.arange(window)
             slope, intercept = np.polyfit(x, closes, 1)
             fitted = intercept + slope * x
+
+            # R^2 計算，確保有變異量再評估
+            ss_res = np.sum((closes.to_numpy() - fitted) ** 2)
+            ss_tot = np.sum((closes.to_numpy() - np.mean(closes)) ** 2)
+            if ss_tot == 0:
+                continue
+
+            r2 = 1 - ss_res / ss_tot
+            if r2 < min_r2:
+                continue
+
             residuals = closes.to_numpy() - fitted
             max_abs = np.max(np.abs(residuals))
 
             mean_price = np.mean(closes)
             normalized_width = max_abs / mean_price if mean_price else np.inf
 
-            if best_for_window is None or normalized_width < best_for_window["score"]:
-                best_for_window = {
+            if best_for_start is None or normalized_width < best_for_start["score"]:
+                best_for_start = {
                     "x": dates.tolist(),
                     "center": fitted.tolist(),
                     "upper": (fitted + max_abs).tolist(),
                     "lower": (fitted - max_abs).tolist(),
                     "window": window,
                     "start": start,
+                    "r2": r2,
                     "score": normalized_width,
                 }
 
-        if best_for_window:
-            best_for_window.pop("score", None)
-            channels.append(best_for_window)
+        if best_for_start:
+            best_for_start.pop("score", None)
+            channels.append(best_for_start)
+            start = best_for_start["start"] + best_for_start["window"]
+        else:
+            start += 1
 
     return channels
 
