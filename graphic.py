@@ -112,6 +112,58 @@ def compute_kd(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+def compute_raff_channels(df: pd.DataFrame, min_length: int = 15):
+    """
+    計算所有可能的 Raff Regression Channels：
+    - 對圖表範圍內每一個起點與視窗長度（>= min_length）進行線性回歸
+    - 以覆蓋視窗資料的最小通道寬度作為該視窗的通道
+    - 回傳 list[dict]：每個通道包含 {"x", "upper", "lower", "center", "window", "start"}
+    若資料不足或無法計算則回傳空 list。
+    """
+
+    if len(df) < min_length or "Close" not in df.columns or "DateStr" not in df.columns:
+        return []
+
+    channels = []
+
+    for start in range(0, len(df) - min_length + 1):
+        best_for_window = None
+        max_window = len(df) - start
+
+        for window in range(min_length, max_window + 1):
+            closes = df["Close"].iloc[start:start + window]
+            dates = df["DateStr"].iloc[start:start + window]
+
+            if closes.isna().any():
+                continue
+
+            x = np.arange(window)
+            slope, intercept = np.polyfit(x, closes, 1)
+            fitted = intercept + slope * x
+            residuals = closes.to_numpy() - fitted
+            max_abs = np.max(np.abs(residuals))
+
+            mean_price = np.mean(closes)
+            normalized_width = max_abs / mean_price if mean_price else np.inf
+
+            if best_for_window is None or normalized_width < best_for_window["score"]:
+                best_for_window = {
+                    "x": dates.tolist(),
+                    "center": fitted.tolist(),
+                    "upper": (fitted + max_abs).tolist(),
+                    "lower": (fitted - max_abs).tolist(),
+                    "window": window,
+                    "start": start,
+                    "score": normalized_width,
+                }
+
+        if best_for_window:
+            best_for_window.pop("score", None)
+            channels.append(best_for_window)
+
+    return channels
+
+
 def plot_stock(file_info, stock_name_map):
     """
     根據選到的 CSV 畫圖：
@@ -151,6 +203,9 @@ def plot_stock(file_info, stock_name_map):
 
     # KD
     df = compute_kd(df)
+
+    # Raff Regression Channels（最少 15 個交易日，列出圖形範圍內所有通道）
+    raff_channels = compute_raff_channels(df, min_length=15)
 
     # 成交量顏色（漲紅跌綠）
     volume_colors = [
@@ -204,6 +259,25 @@ def plot_stock(file_info, stock_name_map):
         xaxis="x", yaxis="y",
     ))
 
+    if raff_channels:
+        legend_added = False
+        for channel in raff_channels:
+            showlegend = not legend_added
+            name_suffix = f"（{channel['window']}日）"
+            traces.append(go.Scatter(
+                x=channel["x"], y=channel["upper"],
+                mode="lines", name=f"Raff 上緣{name_suffix}",
+                line=dict(color="yellow", width=2),
+                xaxis="x", yaxis="y", showlegend=showlegend,
+            ))
+            traces.append(go.Scatter(
+                x=channel["x"], y=channel["lower"],
+                mode="lines", name=f"Raff 下緣{name_suffix}",
+                line=dict(color="yellow", width=2),
+                xaxis="x", yaxis="y", showlegend=False,
+            ))
+            legend_added = True
+
     # ② 中：成交量 Volume（y2）
     traces.append(go.Bar(
         x=df["DateStr"],
@@ -231,7 +305,10 @@ def plot_stock(file_info, stock_name_map):
     # === Layout：X 軸為 category，三層 Y 軸堆疊 ===
     layout = go.Layout(
         title=dict(text=title_text),
-        template="plotly_white",
+        template="plotly_dark",
+        paper_bgcolor="black",
+        plot_bgcolor="black",
+        font=dict(color="white"),
 
         # 一條共用 X 軸（類別軸）
         xaxis=dict(
@@ -243,18 +320,21 @@ def plot_stock(file_info, stock_name_map):
             spikedash="dot",
             rangeslider=dict(visible=False),
             showticklabels=False,   # ★ 不要顯示日期
+            color="white",            
         ),
 
         # 上：價格
         yaxis=dict(
             title="價格",
             domain=[0.3, 1.0],
+            color="white",
         ),
 
         # 中：成交量
         yaxis2=dict(
             title="成交量",
             domain=[0.12, 0.3],
+            color="white",
         ),
 
         # 下：KD
@@ -262,6 +342,7 @@ def plot_stock(file_info, stock_name_map):
             title="KD",
             domain=[0.0, 0.1],
             showticklabels=True, # ★ 顯示 X 軸 tick labels（日期）
+            color="white",
         ),
 
         hovermode="x",
@@ -399,6 +480,27 @@ def plot_backtest_figure(df: pd.DataFrame,
             xaxis="x", yaxis="y",
         ))
 
+    raff_channels = compute_raff_channels(df, min_length=15)
+
+    if raff_channels:
+        legend_added = False
+        for channel in raff_channels:
+            showlegend = not legend_added
+            name_suffix = f"（{channel['window']}日）"
+            traces.append(go.Scatter(
+                x=channel["x"], y=channel["upper"],
+                mode="lines", name=f"Raff 上緣{name_suffix}",
+                line=dict(color="yellow", width=2),
+                xaxis="x", yaxis="y", showlegend=showlegend,
+            ))
+            traces.append(go.Scatter(
+                x=channel["x"], y=channel["lower"],
+                mode="lines", name=f"Raff 下緣{name_suffix}",
+                line=dict(color="yellow", width=2),
+                xaxis="x", yaxis="y", showlegend=False,
+            ))
+            legend_added = True
+
     # ② 中：成交量 Volume（y2）
     traces.append(go.Bar(
         x=df["DateStr"],
@@ -424,7 +526,7 @@ def plot_backtest_figure(df: pd.DataFrame,
             xaxis="x", yaxis="y3",
         ))
 
-    # 買點標記（黑色三角形）
+    # 買點標記（白色三角形）
     if "buy_signal" in df.columns and df["buy_signal"].any():
         buy_mask = df["buy_signal"].astype(bool)
         buy_prices = df.loc[buy_mask, "Close"]
@@ -432,7 +534,7 @@ def plot_backtest_figure(df: pd.DataFrame,
             x=df.loc[buy_mask, "DateStr"],
             y=buy_prices * 0.95,
             mode="markers",
-            marker=dict(symbol="triangle-up", size=14, color="black"),
+            marker=dict(symbol="triangle-up", size=14, color="white", line=dict(color="white", width=1)),
             name="買點",
             customdata=buy_prices,
             hovertemplate="買點<br>收盤：%{customdata}<extra></extra>",
@@ -440,7 +542,7 @@ def plot_backtest_figure(df: pd.DataFrame,
             yaxis="y",
         ))
 
-    # 賣點標記（黑色倒三角形）
+    # 賣點標記（白色倒三角形）
     if "sell_signal" in df.columns and df["sell_signal"].any():
         sell_mask = df["sell_signal"].astype(bool)
         sell_prices = df.loc[sell_mask, "Close"]
@@ -448,7 +550,7 @@ def plot_backtest_figure(df: pd.DataFrame,
             x=df.loc[sell_mask, "DateStr"],
             y=sell_prices * 1.05,
             mode="markers",
-            marker=dict(symbol="triangle-down-open", size=14, color="black"),
+            marker=dict(symbol="triangle-down-open", size=14, color="white", line=dict(color="white", width=1)),
             name="賣點",
             customdata=sell_prices,
             hovertemplate="賣點<br>收盤：%{customdata}<extra></extra>",
@@ -490,7 +592,10 @@ def plot_backtest_figure(df: pd.DataFrame,
 
     layout = go.Layout(
         title=dict(text=title_text),
-        template="plotly_white",
+        template="plotly_dark",
+        paper_bgcolor="black",
+        plot_bgcolor="black",
+        font=dict(color="white"),
         xaxis=dict(
             type="category",
             showspikes=True,
@@ -500,10 +605,11 @@ def plot_backtest_figure(df: pd.DataFrame,
             spikedash="dot",
             rangeslider=dict(visible=False),
             showticklabels=False,
+            color="white",
         ),
-        yaxis=dict(title="價格", domain=[0.3, 1.0]),
-        yaxis2=dict(title="成交量", domain=[0.12, 0.3]),
-        yaxis3=dict(title="KD", domain=[0.0, 0.1], showticklabels=True),
+        yaxis=dict(title="價格", domain=[0.3, 1.0], color="white"),
+        yaxis2=dict(title="成交量", domain=[0.12, 0.3], color="white"),
+        yaxis3=dict(title="KD", domain=[0.0, 0.1], showticklabels=True, color="white"),
         hovermode="x",
         hoversubplots="axis",
         height=1250,
