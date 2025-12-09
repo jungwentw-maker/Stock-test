@@ -998,6 +998,7 @@ def main():
                 oversold_lookback,
                 start_mode,
                 start_date,
+                show_raff_channels,
                 initial_capital,
                 sell_conditions,
                 trailing_stop_enabled,
