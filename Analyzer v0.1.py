@@ -1,6 +1,3 @@
-+210
--0
-
 import os
 import threading
 from datetime import datetime
@@ -112,7 +109,10 @@ def analyze_data():
 
                 df.index.name = 'Date'
                 df = df.reset_index()
-                df['Date'] = pd.to_datetime(df['Date'])
+                date_series = pd.to_datetime(df['Date'])
+                if date_series.dt.tz is not None:
+                    date_series = date_series.dt.tz_convert(None)
+                df['Date'] = date_series
 
                 df['MA5'] = df['Close'].rolling(5).mean()
                 df['MA20'] = df['Close'].rolling(20).mean()
@@ -131,12 +131,10 @@ def analyze_data():
                 df_recent = df[df['Date'] >= three_months_ago]
 
                 stock_name = STOCK_NAME_MAP.get(sid) or STOCK_NAME_MAP.get(sid.lstrip('0')) or 'unknown'
-                today_str = datetime.today().strftime('%Y-%m-%d')
+                today_str = datetime.today().strftime('%Y%m%d')
 
-                output_dir = os.path.join(save_root, sid, stock_name)
-                os.makedirs(output_dir, exist_ok=True)
-
-                output_path = os.path.join(output_dir, f"{today_str}.csv")
+                output_filename = f"{sid}{stock_name}{today_str}.csv"
+                output_path = os.path.join(save_root, output_filename)
                 df_recent.to_csv(output_path, index=False, encoding='utf-8-sig')
 
             except Exception as e:
