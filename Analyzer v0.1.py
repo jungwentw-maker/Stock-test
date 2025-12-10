@@ -7,6 +7,8 @@ import yfinance as yf
 import tkinter as tk
 from tkinter import messagebox
 
+from graphic import plot_backtest_figure
+
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 STOCK_MAP_PATH = os.path.join(BASE_DIR, "content", "stock_id.csv")
 
@@ -128,7 +130,8 @@ def analyze_data():
                 df['D'] = d_series
 
                 three_months_ago = pd.Timestamp.today().normalize() - pd.DateOffset(months=3)
-                df_recent = df[df['Date'] >= three_months_ago]
+                df_recent = df[df['Date'] >= three_months_ago].copy()
+                df_recent.sort_values('Date', inplace=True)
 
                 stock_name = STOCK_NAME_MAP.get(sid) or STOCK_NAME_MAP.get(sid.lstrip('0')) or 'unknown'
                 today_str = datetime.today().strftime('%Y%m%d')
@@ -136,6 +139,18 @@ def analyze_data():
                 output_filename = f"{sid}{stock_name}{today_str}.csv"
                 output_path = os.path.join(save_root, output_filename)
                 df_recent.to_csv(output_path, index=False, encoding='utf-8-sig')
+
+                try:
+                    fig = plot_backtest_figure(
+                        df_recent,
+                        stock_id=sid,
+                        stock_name=stock_name,
+                        period="近三個月",
+                        show_raff_channels=False,
+                    )
+                    fig.show()
+                except Exception as plot_err:
+                    print(f"繪圖 {stock_id} ({full_id}) 失敗：{plot_err}")
 
             except Exception as e:
                 print(f"分析 {stock_id} ({full_id}) 失敗：{e}")
