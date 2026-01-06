@@ -90,26 +90,50 @@ def analyze_data():
         os.makedirs(save_root, exist_ok=True)
 
         selected_market = market_var.get()  # 'TW' 或 'US'
+        success_list = []
+        fail_list = []
 
         for stock_id in stock_ids:
             sid = stock_id.strip()
 
+            # 準備不同市場需要嘗試的 ticker 後綴
             if selected_market == 'TW':
-                full_id = sid + '.TW'
+                candidate_ids = [sid + '.TW', sid + '.TWO']
             elif selected_market == 'US':
-                full_id = sid.upper()
+                sid_upper = sid.upper()
+                candidate_ids = [sid_upper]
+                if '.' not in sid_upper:
+                    candidate_ids.append(sid_upper + '.US')
             else:
-                full_id = sid
+                candidate_ids = [sid]
 
             lbl_status.config(text=f"處理中：{stock_id} ({selected_market})")
             root.update()
 
-            try:
-                ticker = yf.Ticker(full_id)
-                df = ticker.history(period="6mo")
-                if df.empty:
-                    print(f"取得 {stock_id} ({full_id}) 失敗：無資料")
-                    continue
+            last_error = None
+            df = None
+            used_id = None
+
+            for full_id in candidate_ids:
+                try:
+                    ticker = yf.Ticker(full_id)
+                    df = ticker.history(period="6mo")
+                    if df.empty:
+                        last_error = "無資料"
+                        continue
+
+                    used_id = full_id
+                    break
+                except Exception as fetch_err:
+                    last_error = str(fetch_err)
+
+            if df is None or df.empty or used_id is None:
+                msg = f"{stock_id} 下載失敗"
+                if last_error:
+                    msg += f"（{last_error}）"
+                fail_list.append(msg)
+                print(msg)
+                continue
 
                 df.index.name = 'Date'
                 df = df.reset_index()
@@ -142,6 +166,8 @@ def analyze_data():
                 output_path = os.path.join(save_root, output_filename)
                 df_recent.to_csv(output_path, index=False, encoding='utf-8-sig')
 
+                success_list.append(f"{stock_id}（{used_id}）存入 {output_filename}")
+                
                 try:
                     fig = plot_backtest_figure(
                         df_recent,
@@ -156,10 +182,21 @@ def analyze_data():
                     print(f"繪圖 {stock_id} ({full_id}) 失敗：{plot_err}")
 
             except Exception as e:
-                print(f"分析 {stock_id} ({full_id}) 失敗：{e}")
+                fail_list.append(f"分析 {stock_id} 失敗：{e}")
+                print(f"分析 {stock_id} 失敗：{e}")
 
-        messagebox.showinfo("完成", f"分析結果已存入：\n{save_root}")
-        lbl_status.config(text="完成！")
+        if success_list and not fail_list:
+            messagebox.showinfo("完成", "\n".join(success_list))
+            lbl_status.config(text="完成！")
+        elif success_list and fail_list:
+            messagebox.showwarning(
+                "部分失敗",
+                "成功：\n" + "\n".join(success_list) + "\n\n失敗：\n" + "\n".join(fail_list),
+            )
+            lbl_status.config(text="部分完成")
+        else:
+            messagebox.showerror("全部失敗", "\n".join(fail_list) if fail_list else "全部失敗，無可用資料")
+            lbl_status.config(text="失敗")
 
     except Exception as e:
         messagebox.showerror("錯誤", str(e))

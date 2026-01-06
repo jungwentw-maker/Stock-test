@@ -79,19 +79,40 @@ def download_data():
             # ★ 依市場決定 yfinance 代號
             if selected_market == 'TW':
                 # 台股：數字代號 + .TW
-                full_id = sid + '.TW'
+                primary_full_id = sid + '.TW'
+                fallback_full_id = sid + '.TWO'
             else:
                 # 美股：直接使用代號（轉大寫），不加後綴
-                full_id = sid.upper()
+                primary_full_id = sid.upper()
+                fallback_full_id = None
 
             lbl_status.config(text=f"處理中：{stock_id} ({selected_market})")
             root.update()
 
             try:
-                data = yf.Ticker(full_id)
-                df = data.history(period=selected_period)
-                if df.empty:
-                    print(f"下載 {stock_id} ({full_id}) 失敗：無資料")
+                df = None
+                primary_error = None
+
+                try:
+                    data = yf.Ticker(primary_full_id)
+                    df = data.history(period=selected_period)
+                except Exception as e:
+                    primary_error = e
+
+                # 當主要後綴取得資料失敗（例外或空資料），嘗試改用 TWO
+                if (df is None or df.empty) and fallback_full_id:
+                    print(f"下載 {stock_id} ({primary_full_id}) 失敗，嘗試 {fallback_full_id}")
+                    try:
+                        data = yf.Ticker(fallback_full_id)
+                        df = data.history(period=selected_period)
+                    except Exception as e:
+                        print(f"下載 {stock_id} ({fallback_full_id}) 失敗：{e}")
+                        df = None
+
+                if df is None or df.empty:
+                    if primary_error:
+                        print(f"下載 {stock_id} ({primary_full_id}) 失敗：{primary_error}")
+                    print(f"下載 {stock_id} 失敗：主要與備援代碼皆無資料")
                     continue
 
                 df.index.name = 'Date'
