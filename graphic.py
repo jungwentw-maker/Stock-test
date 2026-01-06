@@ -370,6 +370,7 @@ def plot_backtest_figure(
     stock_name: str = "",
     period: str | None = None,
     show_raff_channels: bool = True,
+    show: bool = True,
 ) -> go.Figure:
     """
     從已包含技術指標與 buy_signal 欄位的 DataFrame 繪製三層圖：
@@ -571,9 +572,11 @@ def plot_backtest_figure(
     )
 
     fig = go.Figure(data=traces, layout=layout)
-    fig.show()
-    return fig
 
+    if show:
+        fig.show()
+
+    return fig
 
 if __name__ == "__main__":
     main()

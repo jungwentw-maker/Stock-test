@@ -96,8 +96,10 @@ def analyze_data():
 
             if selected_market == 'TW':
                 full_id = sid + '.TW'
-            else:
+            elif selected_market == 'US':
                 full_id = sid.upper()
+            else:
+                full_id = sid
 
             lbl_status.config(text=f"處理中：{stock_id} ({selected_market})")
             root.update()
@@ -133,7 +135,7 @@ def analyze_data():
                 df_recent = df[df['Date'] >= three_months_ago].copy()
                 df_recent.sort_values('Date', inplace=True)
 
-                stock_name = STOCK_NAME_MAP.get(sid) or STOCK_NAME_MAP.get(sid.lstrip('0')) or 'unknown'
+                stock_name = STOCK_NAME_MAP.get(sid) or STOCK_NAME_MAP.get(sid.lstrip('0')) or ''
                 today_str = datetime.today().strftime('%Y%m%d')
 
                 output_filename = f"{sid}{stock_name}{today_str}.csv"
@@ -147,6 +149,7 @@ def analyze_data():
                         stock_name=stock_name,
                         period="近三個月",
                         show_raff_channels=False,
+                        show=False,
                     )
                     fig.show()
                 except Exception as plot_err:
@@ -212,7 +215,7 @@ stock_var.trace_add("write", update_stock_name)
 # 市場選擇
 tk.Label(root, text="選擇市場：", font=('Arial', 11)).pack(pady=5)
 market_var = tk.StringVar(value="TW")
-market_menu = tk.OptionMenu(root, market_var, "TW", "US")
+market_menu = tk.OptionMenu(root, market_var, "TW", "US","手動輸入")
 market_menu.config(font=('Arial', 11), width=10)
 market_menu.pack()
 
